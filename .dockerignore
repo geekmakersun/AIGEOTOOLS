@@ -1,0 +1,50 @@
+# ========== 版本控制 ==========
+.git
+.gitignore
+.github
+.devcontainer
+
+# ========== 文档 ==========
+docs
+DOCS.md
+README.md
+LICENSE
+
+# ========== 本地敏感 / 运行时数据（脱敏） ==========
+*.db
+*.sqlite
+*.sqlite3
+data/
+knowledge_base/
+config.json
+.streamlit/secrets.toml
+
+# ========== Python ==========
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+dist/
+build/
+.mypy_cache/
+.pytest_cache/
+
+# ========== IDE / OS ==========
+.vscode/
+.idea/
+.cursor/
+.DS_Store
+Thumbs.db
+
+# ========== wheelhouse（离线构建产物，不要进镜像 —— 容器里用 bind mount）==========
+wheelhouse/
+
+# ========== 构建产物 ==========
+Dockerfile
+docker-compose*.yml
+.dockerignore
+Makefile
+deploy*.sh
+*.md.bak

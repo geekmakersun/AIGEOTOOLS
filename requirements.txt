@@ -12,7 +12,10 @@ langchain-openai>=1.1,<2
 langchain-groq>=1.1,<2
 langchain-deepseek>=1.0,<2
 langchain-moonshot>=0.1.0,<1
-langchain-aliyun>=0.1.0,<1
+# langchain-aliyun：PyPI 上不存在此包，项目里通义千问走的是 langchain_community.ChatTongyi，
+#  langchain_aliyun 只是 build_tongyi 的 fallback 分支，永远不会走到，因此去掉避免构建失败。
+# 如需阿里官方包，后续改用 langchain-alicommon
+# langchain-aliyun>=0.1.0,<1
 
 # 平台同步功能依赖
 httpx>=0.24.0
