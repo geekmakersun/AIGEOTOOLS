@@ -33,11 +33,20 @@ st.title(APP_TITLE)
 
 st.caption("🚀 AI 驱动的品牌内容策略 · 让您的品牌在 AI 对话中脱颖而出")
 
+# ------------------- 基础路径（统一用绝对路径，不依赖 CWD）--------------------
+# 容器里 WORKDIR=/app 且 ./ 被 bind mount 覆盖；直接算相对 __file__ 的绝对路径
+# 就不怕 Streamlit 切换目录、也不怕 python geo_tool.py 直接跑
+BASE = Path(__file__).resolve().parent
+DATA_DIR = BASE / "data"
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 # ------------------- 初始化数据存储（SQLite） -------------------
-storage = DataStorage(storage_type="sqlite", db_path="geo_data.db")
+# SQLite 文件放在 data/ 下（compose bind mount 已授权宿主 chown 1000:1000）
+storage = DataStorage(storage_type="sqlite", db_path=str(DATA_DIR / "geo_data.db"))
 
 # ------------------- 初始化知识库（RAG） -------------------
-kb = KnowledgeBase(storage_path="knowledge_base")
+# 同上：data/knowledge_base/ 已在容器内可写
+kb = KnowledgeBase(storage_path=str(DATA_DIR / "knowledge_base"))
 
 # ------------------- 成本记录辅助函数 -------------------
 def estimate_tokens(text: str) -> int:
@@ -121,7 +130,7 @@ with st.expander("📖 关于 GEO（Generative Engine Optimization）", expanded
 
 def load_default_cfg():
     """
-    从项目根目录的 config.json 读取默认配置，如果不存在则使用内置默认值。
+    从项目 data/config.json 读取默认配置，如果不存在则使用内置默认值。
     敏感信息（API Keys）优先从 .streamlit/secrets.toml 读取。
     """
     base_cfg = {
@@ -132,14 +141,13 @@ def load_default_cfg():
             "DeepSeek": ""
         },
         "tongyi_wanxiang_api_key": "",
-        "brand": "",
-        "advantages": "",
-        "competitors": "",
+        "deepseek_image_api_key": "",
+        "default_brand": "",
         "temperature": 0.7,
     }
 
-    # 从 config.json 读取非敏感配置
-    config_path = Path(__file__).with_name("config.json")
+    # 从 data/config.json 读取非敏感配置（和 save_cfg_to_file 路径一致）
+    config_path = DATA_DIR / "config.json"
     if config_path.exists():
         try:
             with config_path.open("r", encoding="utf-8") as f:
@@ -183,7 +191,9 @@ def save_cfg_to_file(cfg: dict) -> None:
     将当前生效的非敏感配置写入本地 config.json。
     敏感信息（API Keys）不会保存到此文件，仅保存到 .streamlit/secrets.toml。
     """
-    config_path = Path(__file__).with_name("config.json")
+    # config.json 放在 data/ 下，跟 SQLite 放在同一个已授权可写目录；
+    # 不能放源码根目录 —— 宿主没写权限（root:root）、容器里 geoapp 写不了
+    config_path = DATA_DIR / "config.json"
     try:
         data = {}
         if config_path.exists():

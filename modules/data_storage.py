@@ -30,21 +30,29 @@ class DataStorage:
     
     def _init_sqlite(self):
         """初始化SQLite数据库"""
-        with sqlite3.connect(self.db_path, check_same_thread=False) as conn:
-            cursor = conn.cursor()
+        # P1-4/5：1) 确保父目录存在（否则 unable to open database file）
+        #         2) check_same_thread=True（Streamlit 单线程 rerun，不会跨线程用 conn）
+        #            避免了 False 引入的 SQLite 并发写 race condition
+        db_dir = Path(self.db_path).parent
+        if str(db_dir) != "." and str(db_dir) != "":
+            db_dir.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with sqlite3.connect(self.db_path, check_same_thread=True) as conn:
+                cursor = conn.cursor()
+                
+                # 关键词表
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS keywords (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        keyword TEXT NOT NULL,
+                        brand TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
             
-            # 关键词表
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS keywords (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    keyword TEXT NOT NULL,
-                    brand TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            
-            # 内容表（生成的文章）
-            cursor.execute("""
+                # 内容表（生成的文章）
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS articles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     keyword TEXT,
@@ -54,10 +62,10 @@ class DataStorage:
                     brand TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # 优化记录表
-            cursor.execute("""
+                """)
+                
+                # 优化记录表
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS optimizations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     original_content TEXT,
@@ -67,10 +75,10 @@ class DataStorage:
                     brand TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # 验证结果表
-            cursor.execute("""
+                """)
+                
+                # 验证结果表
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS verify_results (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     query TEXT,
@@ -80,10 +88,10 @@ class DataStorage:
                     mention_position TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # API 调用记录表（用于成本统计）
-            cursor.execute("""
+                """)
+                
+                # API 调用记录表（用于成本统计）
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS api_calls (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     operation_type TEXT NOT NULL,
@@ -99,10 +107,10 @@ class DataStorage:
                     brand TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # 工作流表
-            cursor.execute("""
+                """)
+                
+                # 工作流表
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflows (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -113,10 +121,10 @@ class DataStorage:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # 工作流执行记录表
-            cursor.execute("""
+                """)
+                
+                # 工作流执行记录表
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_executions (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     workflow_id TEXT NOT NULL,
@@ -127,10 +135,10 @@ class DataStorage:
                     error TEXT,
                     FOREIGN KEY (workflow_id) REFERENCES workflows(id)
                 )
-            """)
-            
-            # 工作流模板表
-            cursor.execute("""
+                """)
+                
+                # 工作流模板表
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS workflow_templates (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -138,10 +146,10 @@ class DataStorage:
                     steps TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            # 平台账号表（用于存储各平台的账号配置）
-            cursor.execute("""
+                """)
+                
+                # 平台账号表（用于存储各平台的账号配置）
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS platform_accounts (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     platform TEXT NOT NULL,
@@ -159,10 +167,10 @@ class DataStorage:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(platform, brand, account_name)
                 )
-            """)
-            
-            # 发布记录表（用于存储文章发布记录）
-            cursor.execute("""
+                """)
+                
+                # 发布记录表（用于存储文章发布记录）
+                cursor.execute("""
                 CREATE TABLE IF NOT EXISTS publish_records (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     article_id INTEGER,
@@ -177,20 +185,25 @@ class DataStorage:
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (article_id) REFERENCES articles(id)
                 )
-            """)
-            
-            # 扩展articles表，添加发布状态字段
-            try:
-                cursor.execute("ALTER TABLE articles ADD COLUMN publish_status TEXT DEFAULT 'draft'")
-            except sqlite3.OperationalError:
-                # 字段已存在等预期情况，忽略
-                pass
-            
-            try:
-                cursor.execute("ALTER TABLE articles ADD COLUMN publish_urls TEXT")
-            except sqlite3.OperationalError:
-                # 字段已存在等预期情况，忽略
-                pass
+                """)
+                
+                # 扩展articles表，添加发布状态字段
+                try:
+                    cursor.execute("ALTER TABLE articles ADD COLUMN publish_status TEXT DEFAULT 'draft'")
+                except sqlite3.OperationalError:
+                    # 字段已存在等预期情况，忽略
+                    pass
+                
+                try:
+                    cursor.execute("ALTER TABLE articles ADD COLUMN publish_urls TEXT")
+                except sqlite3.OperationalError:
+                    # 字段已存在等预期情况，忽略
+                    pass
+
+        except Exception as e:
+            import logging
+            logging.error(f"初始化 SQLite 数据库失败: {e}, path={self.db_path}")
+            raise
     
     def _init_json(self):
         """初始化JSON存储目录"""
