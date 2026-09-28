@@ -29,10 +29,12 @@ WORKDIR /build
 COPY requirements.txt .
 
 # 安装依赖到独立的虚拟环境，后续 runner 阶段直接复制 venv
-# --find-links=wheelhouse → 本地有就用，没有再去 PIP_INDEX_URL 联网
+# --require-hashes 强制校验 wheel 的 sha256 与 requirements.txt 里的 --hash 行完全一致，
+# 防止依赖替换攻击（需要 make lock / make wheelhouse 先把 hash 填上）
 RUN python -m venv /opt/venv \
     && /opt/venv/bin/pip install --upgrade pip setuptools wheel \
     && /opt/venv/bin/pip install \
+        --require-hashes \
         -r requirements.txt
 
 # ---------- 阶段 2：运行时 ----------

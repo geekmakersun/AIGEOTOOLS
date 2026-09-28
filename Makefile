@@ -88,22 +88,65 @@ endif
 #   之后 Dockerfile --find-links=wheelhouse 先读本地
 #   构建完全离线也能走通（前提：wheelhouse 是完整的）
 # ══════════════════════════════════════════════════════════════════════════
-wheelhouse: ## 首次用：用 python 容器下载依赖到 wheelhouse/，后续离线可复用
-	@echo "→ 拉取基础镜像 $(BASE_IMAGE)（本地没有才拉）..."
+# 🧊 版本锁定 —— pip-tools（requirements.in → requirements.txt）
+#
+#   requirements.in        ← 手写，只列直接 import 的包，宽松约束
+#   requirements.txt       ← AUTO-GENERATED，所有依赖精确 pin + 二进制 hash
+#   wheelhouse/*.whl       ← 本地 wheel 缓存 + 每个 wheel 的 sha256
+#
+#   永远只改 requirements.in，别手动改 requirements.txt！
+#
+#   升级某个包: make upgrade PKG=streamlit
+#   全部升级: make upgrade-all
+#   重新锁版本: make lock
+#   重建 wheelhouse: make wheelhouse
+#   校验 wheelhouse 和 requirements.txt 一致: make wheelhouse-verify
+LOCK_SCRIPT      := .scripts/geo_lock.py
+VERIFY_SCRIPT    := .scripts/geo_verify.py
+
+# ── make lock：pip freeze（运行中容器已验证版本） + wheelhouse sha256 → requirements.txt
+#    永远只改 requirements.in，别手动改 requirements.txt
+lock:  ## 🧊 锁版本：pip freeze + wheelhouse sha256 → requirements.txt
+	@echo "→ 检查容器 $(CONTAINER) 是否在运行..."
+	@if ! docker inspect $(CONTAINER) >/dev/null 2>&1; then \
+	  echo "❌ 容器未运行，先 make up"; exit 1; fi
+	@echo "→ 从容器内 pip freeze 拿已验证版本..."
+	docker exec $(CONTAINER) /opt/venv/bin/pip freeze --exclude-editable \
+	  | grep -v "^pip\|^setuptools\|^wheel" | sort > /tmp/geo-frozen.txt
+	python3 $(LOCK_SCRIPT) /tmp/geo-frozen.txt requirements.txt wheelhouse/
+
+# ── 升级
+upgrade:  ## 🔼 升级单个包: make upgrade PKG=streamlit
+	@if [ -z "$(PKG)" ]; then echo "❌ 缺少 PKG"; exit 1; fi
+	docker exec $(CONTAINER) /opt/venv/bin/pip install -U -i https://pypi.tuna.tsinghua.edu.cn/simple $(PKG) 2>&1 | tail -3
+	$(MAKE) lock && $(MAKE) rebuild
+
+upgrade-all:  ## 🔼 全部升级
+	docker exec $(CONTAINER) /opt/venv/bin/pip install -U -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.in 2>&1 | tail -3
+	$(MAKE) lock && $(MAKE) rebuild
+
+# ── wheelhouse：按 requirements.txt（锁定版本）下载 wheel 到本地
+wheelhouse:  ## 💾 离线缓存：按锁定版本下载 wheel + MANIFEST
 	@if ! docker image inspect $(BASE_IMAGE) >/dev/null 2>&1; then docker pull $(BASE_IMAGE) 2>&1 | tail -3; fi
-	@echo "→ 用 python 容器下载依赖到 ./wheelhouse/ ..."
-	@mkdir -p wheelhouse
-	@# 把 requirements.txt 挂进临时容器，在容器里 pip download 到挂载目录
+	@mkdir -p wheelhouse && rm -f wheelhouse/*.whl wheelhouse/MANIFEST.txt
 	docker run --rm \
 		-v "$(shell pwd)/requirements.txt:/src/requirements.txt:ro" \
 		-v "$(shell pwd)/wheelhouse:/out" \
 		$(BASE_IMAGE) \
 		bash -c "pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple pip && \
-		         pip download -d /out -i https://pypi.tuna.tsinghua.edu.cn/simple -r /src/requirements.txt" \
+		         pip download -d /out -i https://pypi.tuna.tsinghua.edu.cn/simple \
+		                   --no-deps -r /src/requirements.txt" \
 		2>&1 | tail -3
-	@CNT=$$(ls wheelhouse/*.whl 2>/dev/null | wc -l); \
-	echo "✔ wheelhouse 构建完成，$$CNT 个 wheel 文件"; \
-	echo "  后续 make rebuild / make up 会优先用这里的文件"
+	@( \
+	  echo "# wheelhouse MANIFEST — $$(date -u +%Y-%m-%dT%H:%M:%SZ)"; \
+	  echo "# requirements.txt git hash: $$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"; \
+	  ls wheelhouse/*.whl 2>/dev/null | wc -l | awk '{print "wheel count: "$$1}'; \
+	  sha256sum wheelhouse/*.whl 2>/dev/null \
+	) > wheelhouse/MANIFEST.txt
+	@CNT=$$(ls wheelhouse/*.whl 2>/dev/null | wc -l); echo "✔ wheelhouse 完成，$$CNT 个 wheel"
+
+wheelhouse-verify:  ## ✅ 校验 wheelhouse 与 requirements.txt hash 完全一致
+	python3 $(VERIFY_SCRIPT) requirements.txt wheelhouse/
 
 # ══════════════════════════════════════════════════════════════════════════
 # 重建 / 拉取

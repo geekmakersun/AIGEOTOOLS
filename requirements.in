@@ -1,0 +1,26 @@
+# requirements.in — direct deps (loose). make lock → requirements.txt (pinned+hashed)
+# Edit this file only. Never hand-edit requirements.txt — it's auto-generated.
+
+# Core
+streamlit>=1.30,<2
+pandas>=2.0,<3
+plotly>=5.0,<6
+
+# LangChain
+langchain-core>=1.2,<2
+langchain-community>=0.4,<1
+
+# LangChain providers
+langchain-openai>=1.1,<2
+langchain-groq>=1.1,<2
+langchain-deepseek>=1.0,<2
+langchain-moonshot>=0.1.0,<1
+
+# Platform sync
+httpx>=0.24.0
+pyperclip>=1.8.2
+
+# ======= Optional (uncomment + make lock) =======
+# dashscope>=1.0,<2
+# qianfan>=0.1.0
+# langchain-wenxin>=0.1.0,<1

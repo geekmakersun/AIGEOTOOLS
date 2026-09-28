@@ -48,3 +48,5 @@ knowledge_base/
 
 # 本地敏感配置（不要提交到仓库）
 config.json
+*.legacy
+.scripts/__pycache__/
